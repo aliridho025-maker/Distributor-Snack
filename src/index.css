@@ -1,3 +1,50 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* ===== PRINT (nota F4 multi-halaman) ===== */
+@media print {
+  @page { size: 215mm 330mm; margin: 12mm; }
+  .app-shell  { display: none !important; }
+  .no-print   { display: none !important; }
+  .nota-screen {
+    position: static !important;
+    overflow: visible !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+  #nota-print {
+    position: static !important;
+    max-width: none !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  #nota-print table { width: 100% !important; }
+  #nota-print thead { display: table-header-group; }
+  #nota-print tfoot { display: table-row-group; }
+  #nota-print tr    { break-inside: avoid; page-break-inside: avoid; }
+  .sign-block       { break-inside: avoid; page-break-inside: avoid; }
+}
