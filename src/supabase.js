@@ -1,8 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
 // ─── Konfigurasi ────────────────────────────────────────────────────────────
-// Ganti dua nilai di bawah ini dengan URL & anon key dari Supabase project kamu.
-// Cara mendapatkannya: Supabase Dashboard → Settings → API
 const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  || "";
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON || "";
 
@@ -10,37 +8,46 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 export const auth = {
-  /** Daftar + otomatis buat business (via trigger on_auth_user_created) */
-  signUp: (email, password) =>
-    supabase.auth.signUp({ email, password }),
-
-  /** Login */
-  signIn: (email, password) =>
-    supabase.auth.signInWithPassword({ email, password }),
-
-  /** Logout */
+  signUp: (email, password) => supabase.auth.signUp({ email, password }),
+  signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
   signOut: () => supabase.auth.signOut(),
-
-  /** Sesi aktif saat ini */
   getSession: () => supabase.auth.getSession(),
-
-  /** Subscribe perubahan sesi */
   onAuthStateChange: (cb) => supabase.auth.onAuthStateChange(cb),
 };
 
+// ─── Cache business_id ─────────────────────────────────────────────────────
+// Semua tabel anak butuh business_id saat INSERT. Kita cache agar tidak
+// query businesses berkali-kali per operasi.
+let _businessId = null;
+
+async function getBusinessId() {
+  if (_businessId) return _businessId;
+  const { data, error } = await supabase
+    .from("businesses")
+    .select("id")
+    .single();
+  if (error) throw error;
+  _businessId = data.id;
+  return _businessId;
+}
+
+// Reset cache saat logout
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_OUT") _businessId = null;
+});
+
 // ─── Business / Profile ──────────────────────────────────────────────────────
 export const db = {
-  /** Ambil profil usaha milik user yg login */
   async getProfile() {
     const { data, error } = await supabase
       .from("businesses")
       .select("*")
       .single();
     if (error) throw error;
-    return data; // { id, nama, alamat, telepon, ... }
+    _businessId = data.id; // isi cache sekalian
+    return data;
   },
 
-  /** Update profil usaha */
   async updateProfile(fields) {
     const { data, error } = await supabase
       .from("businesses")
@@ -59,12 +66,13 @@ export const db = {
       .select("*")
       .order("name");
     if (error) throw error;
-    // Normalise field names ke camelCase agar UI tidak berubah
     return (data || []).map(dbProdToApp);
   },
 
   async upsertProduct(p) {
     const row = appProdToDb(p);
+    // INSERT baru butuh business_id; UPDATE (ada id) tidak perlu diset ulang
+    if (!row.id) row.business_id = await getBusinessId();
     const { data, error } = await supabase
       .from("products")
       .upsert(row, { onConflict: "id" })
@@ -79,7 +87,6 @@ export const db = {
     if (error) throw error;
   },
 
-  /** Tambah / kurangi stok via RPC (tercatat di stock_movements) */
   async addStock(productId, qty, note = "") {
     const { data, error } = await supabase.rpc("add_stock", {
       p_product_id: productId,
@@ -103,6 +110,8 @@ export const db = {
 
   async upsertSalesman(s) {
     const row = appSalesToDb(s);
+    // INSERT baru butuh business_id
+    if (!row.id) row.business_id = await getBusinessId();
     const { data, error } = await supabase
       .from("salesmen")
       .upsert(row, { onConflict: "id" })
@@ -113,7 +122,6 @@ export const db = {
   },
 
   async deleteSalesman(id) {
-    // soft-delete: tandai is_active = false
     const { error } = await supabase
       .from("salesmen")
       .update({ is_active: false })
@@ -122,7 +130,6 @@ export const db = {
   },
 
   // ─── Loads (Muatan) ───────────────────────────────────────────────────────
-  /** Ambil semua loads + load_items sekaligus */
   async getLoads() {
     const { data, error } = await supabase
       .from("loads")
@@ -132,17 +139,12 @@ export const db = {
     return (data || []).map(dbLoadToApp);
   },
 
-  /**
-   * Buat muatan baru via RPC (transaksional: potong stok + catat movement)
-   * items = [{ product_id, qty }, ...]
-   */
   async createLoad(salesmanId, items) {
     const { data, error } = await supabase.rpc("create_load", {
       p_salesman_id: salesmanId,
       p_items: JSON.stringify(items),
     });
     if (error) throw error;
-    // RPC hanya returns loads row; ambil ulang dengan items
     const { data: full, error: e2 } = await supabase
       .from("loads")
       .select("*, load_items(*)")
@@ -152,17 +154,12 @@ export const db = {
     return dbLoadToApp(full);
   },
 
-  /**
-   * Proses setoran via RPC (transaksional: retur stok + hitung setoran/laba)
-   * results = [{ item_id, qty_terjual }, ...]
-   */
   async settleLoad(loadId, results) {
     const { data, error } = await supabase.rpc("settle_load", {
       p_load_id: loadId,
       p_results: JSON.stringify(results),
     });
     if (error) throw error;
-    // Ambil ulang dengan items
     const { data: full, error: e2 } = await supabase
       .from("loads")
       .select("*, load_items(*)")
@@ -173,7 +170,7 @@ export const db = {
   },
 };
 
-// ─── Mapping helpers (DB snake_case <-> App camelCase) ──────────────────────
+// ─── Mapping helpers ─────────────────────────────────────────────────────────
 
 function dbProdToApp(p) {
   return {
@@ -234,7 +231,6 @@ function dbLoadToApp(l) {
     setoran:     Number(l.setoran),
     laba:        Number(l.laba),
     items,
-    // alias untuk komponen Riwayat yang pakai l.result
     result: items,
   };
 }
