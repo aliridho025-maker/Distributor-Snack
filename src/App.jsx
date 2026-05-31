@@ -285,31 +285,17 @@ const DEFAULT_PROFILE = {
 };
 
 /* ============================ Root ============================ */
-export default function App() {
+export default function App({
+  products, sales, loads, profile, ready,
+  persistProducts, persistSales, persistLoads, persistProfile,
+  saveProduct, removeProduct, addStock,
+  saveSalesman, removeSalesman,
+  createLoad, settleLoad,
+  onSignOut,
+}) {
   const [view, setView] = useState("dashboard");
-  const [products, setProducts] = useState([]);
-  const [sales, setSales] = useState([]);
-  const [loads, setLoads] = useState([]);
-  const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [nota, setNota] = useState(null); // { type:'muat'|'setoran', load }
-  const [ready, setReady] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      let p = await loadKey("dist:products", null);
-      let s = await loadKey("dist:sales", null);
-      const l = await loadKey("dist:loads", []);
-      const pr = await loadKey("dist:profile", DEFAULT_PROFILE);
-      if (!p || !p.length) { p = SEED_PRODUCTS; await saveKey("dist:products", p); }
-      if (!s || !s.length) { s = SEED_SALES; await saveKey("dist:sales", s); }
-      setProducts(p); setSales(s); setLoads(l); setProfile(pr); setReady(true);
-    })();
-  }, []);
-
-  const persistProducts = useCallback((n) => { setProducts(n); saveKey("dist:products", n); }, []);
-  const persistSales = useCallback((n) => { setSales(n); saveKey("dist:sales", n); }, []);
-  const persistLoads = useCallback((n) => { setLoads(n); saveKey("dist:loads", n); }, []);
-  const persistProfile = useCallback((n) => { setProfile(n); saveKey("dist:profile", n); }, []);
   const openNota = useCallback((type, load) => setNota({ type, load }), []);
 
   const nav = [
@@ -372,6 +358,14 @@ export default function App() {
             </button>
           );
         })}
+        {/* Tombol logout di bawah sidebar */}
+        <div className="mt-auto">
+          <button onClick={onSignOut}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-800 hover:text-slate-300 transition">
+            <X size={18} />
+            <span className="hidden md:inline">Keluar</span>
+          </button>
+        </div>
       </aside>
 
       <main className="flex-1 overflow-y-auto">
@@ -381,14 +375,16 @@ export default function App() {
           <Dashboard products={products} loads={loads} sales={sales} go={setView} />
         ) : view === "muat" ? (
           <MuatBarang products={products} sales={sales} loads={loads}
-            persistProducts={persistProducts} persistLoads={persistLoads} go={setView} openNota={openNota} />
+            createLoad={createLoad} go={setView} openNota={openNota} />
         ) : view === "setoran" ? (
-          <Setoran loads={loads} sales={sales} products={products}
-            persistProducts={persistProducts} persistLoads={persistLoads} openNota={openNota} />
+          <Setoran loads={loads} sales={sales}
+            settleLoad={settleLoad} openNota={openNota} />
         ) : view === "produk" ? (
-          <Produk products={products} persistProducts={persistProducts} />
+          <Produk products={products}
+            saveProduct={saveProduct} removeProduct={removeProduct} addStock={addStock} />
         ) : view === "sales" ? (
-          <SalesPage sales={sales} loads={loads} persistSales={persistSales} />
+          <SalesPage sales={sales} loads={loads}
+            saveSalesman={saveSalesman} removeSalesman={removeSalesman} />
         ) : view === "pengaturan" ? (
           <Pengaturan profile={profile} persistProfile={persistProfile} />
         ) : (
@@ -526,11 +522,12 @@ function Dashboard({ products, loads, sales, go }) {
 }
 
 /* ============================ Muat Barang ============================ */
-function MuatBarang({ products, sales, loads, persistProducts, persistLoads, go, openNota }) {
+function MuatBarang({ products, sales, loads, createLoad, go, openNota }) {
   const [salesId, setSalesId] = useState("");
   const [q, setQ] = useState("");
   const [cart, setCart] = useState({});
   const [done, setDone] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const filtered = products.filter(
     (p) => p.name.toLowerCase().includes(q.toLowerCase()) || p.sku.toLowerCase().includes(q.toLowerCase())
@@ -550,17 +547,19 @@ function MuatBarang({ products, sales, loads, persistProducts, persistLoads, go,
     setCart((c) => { const n = { ...c }; if (v <= 0) delete n[id]; else n[id] = v; return n; });
   };
 
-  const submit = () => {
-    if (!salesId || items.length === 0) return;
-    const load = {
-      id: uid(), code: "MUAT-" + Date.now().toString().slice(-7),
-      salesId, date: new Date().toISOString(), status: "open",
-      items: items.map((i) => ({ id: i.id, name: i.name, price: i.price, cost: i.cost, qtyAmbil: i.qty })),
-    };
-    persistProducts(products.map((p) => cart[p.id] ? { ...p, stock: p.stock - cart[p.id] } : p));
-    persistLoads([load, ...loads]);
-    setDone(load);
-    setCart({}); setSalesId("");
+  const submit = async () => {
+    if (!salesId || items.length === 0 || submitting) return;
+    setSubmitting(true);
+    try {
+      const supaItems = items.map((i) => ({ product_id: i.id, qty: i.qty }));
+      const load = await createLoad(salesId, supaItems);
+      setDone(load);
+      setCart({}); setSalesId("");
+    } catch (e) {
+      alert("Gagal muat barang: " + e.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (sales.length === 0) {
@@ -676,9 +675,9 @@ function MuatBarang({ products, sales, loads, persistProducts, persistLoads, go,
                   <span className="text-sm text-slate-500">Nilai Barang Dibawa</span>
                   <span className="tnum text-2xl font-extrabold text-slate-900">{rupiah(total)}</span>
                 </div>
-                <button onClick={submit} disabled={!salesId || items.length === 0}
+                <button onClick={submit} disabled={!salesId || items.length === 0 || submitting}
                   className="w-full rounded-xl bg-emerald-500 py-3 text-sm font-bold text-slate-900 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-slate-400">
-                  Serahkan ke Sales
+                  {submitting ? "Menyimpan…" : "Serahkan ke Sales"}
                 </button>
                 {!salesId && items.length > 0 && <p className="mt-2 text-center text-xs text-amber-600">Pilih sales dulu.</p>}
               </div>
@@ -712,18 +711,20 @@ function MuatBarang({ products, sales, loads, persistProducts, persistLoads, go,
 }
 
 /* ============================ Setoran ============================ */
-function Setoran({ loads, sales, products, persistProducts, persistLoads, openNota }) {
+function Setoran({ loads, sales, settleLoad, openNota }) {
   const [active, setActive] = useState(null);
   const open = loads.filter((l) => l.status === "open");
 
-  const settle = (result, setoran, laba) => {
-    const returMap = {};
-    result.forEach((r) => { returMap[r.id] = (returMap[r.id] || 0) + r.qtyRetur; });
-    persistProducts(products.map((p) => returMap[p.id] ? { ...p, stock: p.stock + returMap[p.id] } : p));
-    const settledLoad = { ...active, status: "settled", settledDate: new Date().toISOString(), result, setoran, laba };
-    persistLoads(loads.map((l) => (l.id === active.id ? settledLoad : l)));
-    setActive(null);
-    openNota("setoran", settledLoad);
+  const settle = async (result, _setoran, _laba) => {
+    try {
+      // result = [{ id, name, price, cost, qtyAmbil, qtyTerjual, qtyRetur }]
+      const supaResults = result.map((r) => ({ item_id: r.id, qty_terjual: r.qtyTerjual }));
+      const settled = await settleLoad(active.id, supaResults);
+      setActive(null);
+      openNota("setoran", settled);
+    } catch (e) {
+      alert("Gagal proses setoran: " + e.message);
+    }
   };
 
   return (
@@ -834,7 +835,7 @@ function SetoranModal({ load, salesNm, onClose, onSettle }) {
 }
 
 /* ============================ Produk & Stok ============================ */
-function Produk({ products, persistProducts }) {
+function Produk({ products, saveProduct, removeProduct, addStock }) {
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState(null);
   const [restock, setRestock] = useState(null);
@@ -842,28 +843,30 @@ function Produk({ products, persistProducts }) {
   const filtered = products.filter(
     (p) => p.name.toLowerCase().includes(q.toLowerCase()) || p.sku.toLowerCase().includes(q.toLowerCase()) || p.category.toLowerCase().includes(q.toLowerCase())
   );
-  const save = (d) => {
-    let next;
-    if (d.id && products.some((p) => p.id === d.id)) next = products.map((p) => (p.id === d.id ? d : p));
-    else next = [{ ...d, id: uid() }, ...products];
-    persistProducts(next); setEditing(null);
+  const save = async (d) => {
+    try { await saveProduct(d); setEditing(null); }
+    catch (e) { alert("Gagal simpan produk: " + e.message); }
   };
-  const remove = (id) => persistProducts(products.filter((p) => p.id !== id));
-  const addStock = (id, qty) => { persistProducts(products.map((p) => (p.id === id ? { ...p, stock: p.stock + qty } : p))); setRestock(null); };
+  const remove = async (id) => {
+    try { await removeProduct(id); }
+    catch (e) { alert("Gagal hapus produk: " + e.message); }
+  };
+  const doAddStock = async (id, qty) => {
+    try { await addStock(id, qty, "Restock manual"); setRestock(null); }
+    catch (e) { alert("Gagal tambah stok: " + e.message); }
+  };
 
-  // Impor massal: cocokkan via SKU (atau nama bila SKU kosong) -> perbarui; sisanya tambah baru
-  const bulkImport = (rows) => {
-    const next = [...products];
+  // Impor massal: upsert satu per satu
+  const bulkImport = async (rows) => {
     let added = 0, updated = 0;
-    rows.forEach((row) => {
-      const idx = next.findIndex((p) =>
+    for (const row of rows) {
+      const existing = products.find((p) =>
         row.sku ? (p.sku || "").toLowerCase() === row.sku.toLowerCase()
                 : p.name.toLowerCase() === row.name.toLowerCase()
       );
-      if (idx >= 0) { next[idx] = { ...next[idx], ...row, id: next[idx].id }; updated++; }
-      else { next.unshift({ ...row, id: uid() }); added++; }
-    });
-    persistProducts(next);
+      if (existing) { await saveProduct({ ...existing, ...row, id: existing.id }); updated++; }
+      else { await saveProduct(row); added++; }
+    }
     return { added, updated };
   };
 
@@ -919,7 +922,7 @@ function Produk({ products, persistProducts }) {
         </ul>
       </div>
       {editing && <ProductModal product={editing} onSave={save} onClose={() => setEditing(null)} />}
-      {restock && <RestockModal product={restock} onAdd={addStock} onClose={() => setRestock(null)} />}
+      {restock && <RestockModal product={restock} onAdd={doAddStock} onClose={() => setRestock(null)} />}
       {importing && <ImportModal onImport={bulkImport} onClose={() => setImporting(false)} />}
     </div>
   );
@@ -1144,16 +1147,17 @@ function ImportModal({ onImport, onClose }) {
 }
 
 /* ============================ Sales ============================ */
-function SalesPage({ sales, loads, persistSales }) {
+function SalesPage({ sales, loads, saveSalesman, removeSalesman }) {
   const [editing, setEditing] = useState(null);
   const outstanding = (id) => loads.filter((l) => l.status === "open" && l.salesId === id).reduce((s, l) => s + loadValue(l), 0);
-  const save = (d) => {
-    let next;
-    if (d.id && sales.some((s) => s.id === d.id)) next = sales.map((s) => (s.id === d.id ? d : s));
-    else next = [...sales, { ...d, id: uid() }];
-    persistSales(next); setEditing(null);
+  const save = async (d) => {
+    try { await saveSalesman(d); setEditing(null); }
+    catch (e) { alert("Gagal simpan sales: " + e.message); }
   };
-  const remove = (id) => persistSales(sales.filter((s) => s.id !== id));
+  const remove = async (id) => {
+    try { await removeSalesman(id); }
+    catch (e) { alert("Gagal hapus sales: " + e.message); }
+  };
 
   return (
     <div className="mx-auto max-w-3xl p-5 md:p-8">
