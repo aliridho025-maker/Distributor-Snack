@@ -664,17 +664,17 @@ function MuatBarang({ products, sales, loads, onCreateLoad, go, openNota }) {
         </div>
       </div>
 
-      {/* area scroll utama */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl p-5 md:p-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6">
+      {/* area: di layar lebar header/cari/keranjang tetap, hanya grid produk yang scroll */}
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+        <div className="mx-auto max-w-6xl p-5 md:p-6 lg:grid lg:h-full lg:min-h-0 lg:grid-cols-3 lg:gap-6">
           {/* kolom produk */}
-          <div className="lg:col-span-2">
-            <div className="relative mb-4">
+          <div className="lg:col-span-2 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+            <div className="relative mb-4 lg:shrink-0">
               <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari produk…"
                 className="w-full rounded-xl border border-stone-200 bg-white py-3 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
             </div>
-            <div className="grid auto-rows-min grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+            <div className="grid auto-rows-min grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-2 lg:pr-1">
               {filtered.map((p) => {
                 const inCart = cart[p.id] || 0; const out = p.stock - inCart <= 0;
                 return (
@@ -697,9 +697,9 @@ function MuatBarang({ products, sales, loads, onCreateLoad, go, openNota }) {
           </div>
 
           {/* kolom keranjang */}
-          <div className="mt-6 lg:mt-0">
-            <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white lg:sticky lg:top-0">
-              <div className="border-b border-stone-100 p-4">
+          <div className="mt-6 lg:mt-0 lg:h-full lg:min-h-0">
+            <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white lg:flex lg:h-full lg:flex-col">
+              <div className="border-b border-stone-100 p-4 lg:shrink-0">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="flex items-center gap-2 font-bold text-slate-900"><Truck size={18} className="text-emerald-600" /> Keranjang Muatan</h3>
                   {items.length > 0 && (
@@ -713,6 +713,7 @@ function MuatBarang({ products, sales, loads, onCreateLoad, go, openNota }) {
                   : <p className="mt-1 text-sm font-medium text-amber-600">Pilih sales dulu di atas ↑</p>}
               </div>
 
+              <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               {items.length === 0 ? (
                 <div className="px-4 py-10 text-center text-sm text-slate-400">
                   <PackageCheck size={40} className="mx-auto mb-2 text-slate-200" />Klik produk untuk ditambahkan
@@ -738,8 +739,9 @@ function MuatBarang({ products, sales, loads, onCreateLoad, go, openNota }) {
                   ))}
                 </ul>
               )}
+              </div>
 
-              <div className="border-t border-stone-100 p-4">
+              <div className="border-t border-stone-100 p-4 lg:shrink-0">
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-sm text-slate-500">Nilai Barang Dibawa</span>
                   <span className="tnum text-2xl font-extrabold text-slate-900">{rupiah(total)}</span>
