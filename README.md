@@ -41,3 +41,12 @@ VITE_SUPABASE_ANON_KEY=...
 ## Catatan
 - Saat user pertama mendaftar, baris `businesses` dibuat otomatis (trigger `handle_new_user`). Semua data (produk, sales, muatan) terikat ke usaha tersebut dan diisolasi via RLS.
 - Operasi muat & setoran memakai RPC transaksional (`create_load`, `settle_load`) agar stok selalu konsisten.
+
+## PWA (Install ke HP)
+Aplikasi sudah PWA — bisa dipasang ke layar utama dan jalan seperti app biasa.
+- **Android/Chrome:** buka situs → menu ⋮ → "Install app" / "Tambahkan ke layar Utama".
+- **iOS/Safari:** tombol Share → "Add to Home Screen".
+- Service worker meng-cache cangkang app (HTML/JS/CSS + font) agar buka cepat & tetap tampil walau sinyal lemah. **Data tetap butuh internet** (Supabase) — tidak di-cache agar selalu terbaru.
+- Update app otomatis terpasang saat versi baru ter-deploy (`registerType: autoUpdate`).
+
+> Service worker hanya aktif di HTTPS (Vercel) atau `npm run preview` di localhost — tidak di `npm run dev`.

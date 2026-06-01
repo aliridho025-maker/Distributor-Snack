@@ -313,6 +313,7 @@ function AppShell({ session }) {
   const [nota, setNota] = useState(null); // { type:'muat'|'setoran', load }
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState("");
+  const [live, setLive] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -325,6 +326,28 @@ function AppShell({ session }) {
   }, []);
 
   useEffect(() => { (async () => { await reload(); setReady(true); })(); }, [reload]);
+
+  // Realtime: dorong perubahan dari perangkat lain seketika (debounced)
+  useEffect(() => {
+    let timer;
+    const ping = () => { clearTimeout(timer); timer = setTimeout(() => reload(), 600); };
+    const channel = supabase.channel("db-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, ping)
+      .on("postgres_changes", { event: "*", schema: "public", table: "salesmen" }, ping)
+      .on("postgres_changes", { event: "*", schema: "public", table: "loads" }, ping)
+      .on("postgres_changes", { event: "*", schema: "public", table: "load_items" }, ping)
+      .on("postgres_changes", { event: "*", schema: "public", table: "businesses" }, ping)
+      .subscribe((status) => setLive(status === "SUBSCRIBED"));
+
+    const onVisible = () => { if (document.visibilityState === "visible") reload(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      supabase.removeChannel(channel);
+    };
+  }, [reload]);
 
   const openNota = useCallback((type, load) => setNota({ type, load }), []);
 
@@ -389,6 +412,10 @@ function AppShell({ session }) {
         })}
 
         <div className="mt-auto hidden border-t border-slate-700 px-3 pt-3 pb-1 md:block">
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${live ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
+            <span className="text-xs text-slate-400">{live ? "Realtime aktif" : "Menyambung…"}</span>
+          </div>
           <p className="truncate text-xs text-slate-400">{session.user.email}</p>
         </div>
         <button
