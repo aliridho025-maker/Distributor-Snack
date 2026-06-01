@@ -3,7 +3,8 @@ import {
   LayoutDashboard, Truck, HandCoins, Package, Users, Receipt, Search,
   Plus, Minus, Trash2, X, Pencil, AlertTriangle, TrendingUp,
   Wallet, ArrowDownToLine, CheckCircle2, ChevronRight, PackageCheck,
-  RotateCcw, UserPlus, Phone, Printer, Settings, FileText, Upload, FileSpreadsheet, Download, ImagePlus, Camera, LogOut
+  RotateCcw, UserPlus, Phone, Printer, Settings, FileText, Upload, FileSpreadsheet, Download, ImagePlus, Camera, LogOut,
+  CheckSquare, Square
 } from "lucide-react";
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
@@ -364,6 +365,7 @@ function AppShell({ session }) {
   };
   const createLoad  = async (salesId, items)   => { const row = await db.createLoad(salesId, items); await reload(); return row; };
   const settleLoad  = async (loadId, results)  => { await db.settleLoad(loadId, results); await reload(); };
+  const deleteLoads = async (ids)              => { await db.deleteLoads(ids); await reload(); };
   const saveProfile = async (p)                => { await db.updateProfile(p); await reload(); };
 
   const nav = [
@@ -450,7 +452,7 @@ function AppShell({ session }) {
         ) : view === "pengaturan" ? (
           <Pengaturan profile={profile} onSaveProfile={saveProfile} />
         ) : (
-          <Riwayat loads={loads} sales={sales} openNota={openNota} />
+          <Riwayat loads={loads} sales={sales} openNota={openNota} onDeleteLoads={deleteLoads} />
         )}
       </main>
       </div>
@@ -1277,35 +1279,89 @@ function SalesModal({ sales, onSave, onClose }) {
 }
 
 /* ============================ Riwayat ============================ */
-function Riwayat({ loads, sales, openNota }) {
+function Riwayat({ loads, sales, openNota, onDeleteLoads }) {
   const [open, setOpen] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+
   const settled = loads.filter((l) => l.status === "settled").sort((a, b) => new Date(b.settledDate) - new Date(a.settledDate));
   const totalSetoran = settled.reduce((s, l) => s + l.setoran, 0);
   const totalLaba = settled.reduce((s, l) => s + l.laba, 0);
 
+  const toggle = (id) => setSelected((prev) => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+  const allChecked = settled.length > 0 && selected.size === settled.length;
+  const toggleAll = () => setSelected(allChecked ? new Set() : new Set(settled.map((l) => l.id)));
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); };
+
+  const handleDelete = async () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(`Hapus ${selected.size} riwayat setoran? Tindakan ini tidak bisa dibatalkan.`)) return;
+    setBusy(true);
+    try {
+      await onDeleteLoads([...selected]);
+      exitSelect();
+    } catch (e) {
+      alert("Gagal menghapus: " + (e?.message || "coba lagi"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl p-5 md:p-8">
-      <Header title="Riwayat Setoran" subtitle={`${settled.length} selesai · setoran ${rupiah(totalSetoran)} · laba ${rupiah(totalLaba)}`} />
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <Header title="Riwayat Setoran" subtitle={`${settled.length} selesai · setoran ${rupiah(totalSetoran)} · laba ${rupiah(totalLaba)}`} compact noMargin />
+        {settled.length > 0 && (
+          selectMode ? (
+            <div className="flex items-center gap-2">
+              <button onClick={toggleAll} className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-stone-200 hover:bg-stone-50">
+                {allChecked ? "Batal Semua" : "Pilih Semua"}
+              </button>
+              <button onClick={handleDelete} disabled={selected.size === 0 || busy}
+                className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-xs font-bold text-white hover:bg-red-600 disabled:bg-stone-200 disabled:text-slate-400">
+                <Trash2 size={14} /> {busy ? "Menghapus…" : `Hapus (${selected.size})`}
+              </button>
+              <button onClick={exitSelect} className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-stone-100">Batal</button>
+            </div>
+          ) : (
+            <button onClick={() => setSelectMode(true)} className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-stone-200 hover:bg-stone-50">
+              <CheckSquare size={14} /> Pilih
+            </button>
+          )
+        )}
+      </div>
+
       {settled.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-stone-300 bg-white py-16 text-center text-sm text-slate-400">Belum ada setoran selesai.</div>
       ) : (
         <ul className="space-y-2">
           {settled.map((l) => {
             const expanded = open === l.id;
+            const checked = selected.has(l.id);
             return (
-              <li key={l.id} className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
-                <button onClick={() => setOpen(expanded ? null : l.id)} className="flex w-full items-center gap-3 p-4 text-left">
-                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600"><HandCoins size={18} /></div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold text-slate-800">{salesName(sales, l.salesId)}</div>
-                    <div className="text-xs text-slate-400">{l.code} · setor {fmtDate(l.settledDate)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="tnum font-extrabold text-slate-900">{rupiah(l.setoran)}</div>
-                    <div className="tnum text-xs text-emerald-600">laba {rupiah(l.laba)}</div>
-                  </div>
-                </button>
-                {expanded && (
+              <li key={l.id} className={`overflow-hidden rounded-2xl border bg-white ${checked ? "border-emerald-400 ring-1 ring-emerald-200" : "border-stone-200"}`}>
+                <div className="flex items-center gap-1">
+                  {selectMode && (
+                    <button onClick={() => toggle(l.id)} className="pl-4 text-emerald-600" aria-label="pilih">
+                      {checked ? <CheckSquare size={20} /> : <Square size={20} className="text-slate-300" />}
+                    </button>
+                  )}
+                  <button onClick={() => (selectMode ? toggle(l.id) : setOpen(expanded ? null : l.id))} className="flex w-full items-center gap-3 p-4 text-left">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600"><HandCoins size={18} /></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-bold text-slate-800">{salesName(sales, l.salesId)}</div>
+                      <div className="text-xs text-slate-400">{l.code} · setor {fmtDate(l.settledDate)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="tnum font-extrabold text-slate-900">{rupiah(l.setoran)}</div>
+                      <div className="tnum text-xs text-emerald-600">laba {rupiah(l.laba)}</div>
+                    </div>
+                  </button>
+                </div>
+                {expanded && !selectMode && (
                   <div className="border-t border-stone-100 bg-stone-50 p-4 text-sm">
                     <div className="mb-1 grid grid-cols-12 text-xs font-bold uppercase text-slate-400">
                       <span className="col-span-6">Barang</span><span className="col-span-2 text-center">Bawa</span>
@@ -1319,7 +1375,7 @@ function Riwayat({ loads, sales, openNota }) {
                         <span className="tnum col-span-2 text-center text-slate-400">{r.qtyRetur}</span>
                       </div>
                     ))}
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <button onClick={() => openNota("muat", l)} className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-stone-200 hover:bg-stone-100"><FileText size={13} /> Nota Muat</button>
                       <button onClick={() => openNota("setoran", l)} className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"><Printer size={13} /> Nota Setoran</button>
                     </div>

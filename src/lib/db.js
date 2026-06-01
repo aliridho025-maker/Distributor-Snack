@@ -133,6 +133,12 @@ export async function settleLoad(loadId, results) {
   if (error) throw error
   return data
 }
+// Hapus muatan/riwayat (load_items ikut terhapus via FK cascade)
+export async function deleteLoads(ids) {
+  if (!ids || !ids.length) return
+  const { error } = await supabase.from('loads').delete().in('id', ids)
+  if (error) throw error
+}
 
 /* ───────── Profil usaha ───────── */
 export async function updateProfile(p) {
